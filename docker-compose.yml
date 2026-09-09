@@ -1,0 +1,17 @@
+services:
+  engage:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gdg-engage
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - CONVEX_URL=https://canny-ferret-157.convex.cloud
+      - PING_INTERVAL_MS=150000
+    volumes:
+      # Persist session state, live quiz responses, and questions across restarts
+      - ./data:/app/data
