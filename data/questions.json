@@ -1,0 +1,170 @@
+[
+  {
+    "id": "q1",
+    "type": "mcq",
+    "category": "Architecture",
+    "text": "Which LLM technique provides up-to-date external knowledge without retraining or fine-tuning weights?",
+    "options": [
+      {
+        "id": "opt-a",
+        "label": "A",
+        "text": "RAG (Retrieval-Augmented Generation)"
+      },
+      {
+        "id": "opt-b",
+        "label": "B",
+        "text": "LoRA (Low-Rank Adaptation)"
+      },
+      {
+        "id": "opt-c",
+        "label": "C",
+        "text": "Weight Quantization (4-bit / 8-bit)"
+      },
+      {
+        "id": "opt-d",
+        "label": "D",
+        "text": "RLHF (Reinforcement Learning with Human Feedback)"
+      }
+    ]
+  },
+  {
+    "id": "q2",
+    "type": "mcq",
+    "category": "Parameters",
+    "text": "What happens when you increase the model temperature from 0.2 to 1.2 during text generation?",
+    "options": [
+      {
+        "id": "opt-a",
+        "label": "A",
+        "text": "The model becomes more deterministic and focused"
+      },
+      {
+        "id": "opt-b",
+        "label": "B",
+        "text": "The output becomes more diverse and creative with higher randomness"
+      },
+      {
+        "id": "opt-c",
+        "label": "C",
+        "text": "Inference latency reduces by 50%"
+      },
+      {
+        "id": "opt-d",
+        "label": "D",
+        "text": "The context window length doubles"
+      }
+    ]
+  },
+  {
+    "id": "q3",
+    "type": "mcq",
+    "category": "Embeddings & Vectors",
+    "text": "Which similarity metric is standard for semantic search over unit-normalized vector embeddings?",
+    "options": [
+      {
+        "id": "opt-a",
+        "label": "A",
+        "text": "Cosine Similarity"
+      },
+      {
+        "id": "opt-b",
+        "label": "B",
+        "text": "Manhattan / L1 Distance"
+      },
+      {
+        "id": "opt-c",
+        "label": "C",
+        "text": "Hamming Distance"
+      },
+      {
+        "id": "opt-d",
+        "label": "D",
+        "text": "Levenshtein String Distance"
+      }
+    ]
+  },
+  {
+    "id": "q4",
+    "type": "mcq",
+    "category": "Gemini & Multimodal",
+    "text": "What is the defining capability of Google's Gemini 1.5 Pro architecture?",
+    "options": [
+      {
+        "id": "opt-a",
+        "label": "A",
+        "text": "1M to 2M token multimodal context window"
+      },
+      {
+        "id": "opt-b",
+        "label": "B",
+        "text": "Strictly limited to 4K text tokens"
+      },
+      {
+        "id": "opt-c",
+        "label": "C",
+        "text": "Requires CPU-only local execution"
+      },
+      {
+        "id": "opt-d",
+        "label": "D",
+        "text": "Does not support audio or video inputs"
+      }
+    ]
+  },
+  {
+    "id": "q5",
+    "type": "mcq",
+    "category": "Prompt Engineering",
+    "text": "What primary function does a 'System Instruction' serve in LLM API design?",
+    "options": [
+      {
+        "id": "opt-a",
+        "label": "A",
+        "text": "Establishes persona, formatting rules, constraints, and tone"
+      },
+      {
+        "id": "opt-b",
+        "label": "B",
+        "text": "Clears the database connection pool"
+      },
+      {
+        "id": "opt-c",
+        "label": "C",
+        "text": "Forces the client to re-authenticate"
+      },
+      {
+        "id": "opt-d",
+        "label": "D",
+        "text": "Compiles TypeScript into machine code"
+      }
+    ]
+  },
+  {
+    "id": "q6",
+    "type": "poll",
+    "category": "Pulse Check",
+    "text": "Workshop Pulse: How confident do you feel about building an AI agent workflow today?",
+    "options": [
+      {
+        "id": "opt-a",
+        "label": "A",
+        "text": "🚀 Ready to build and deploy to production"
+      },
+      {
+        "id": "opt-b",
+        "label": "B",
+        "text": "⚡ High confidence, excited to experiment"
+      },
+      {
+        "id": "opt-c",
+        "label": "C",
+        "text": "🔍 Need a bit more hands-on code examples"
+      },
+      {
+        "id": "opt-d",
+        "label": "D",
+        "text": "📚 Still digesting the architectural concepts"
+      }
+    ]
+  }
+]

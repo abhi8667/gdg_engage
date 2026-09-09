@@ -1,0 +1,310 @@
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/Geist-Variable.woff2') format('woff2-variations'),
+       url('/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/GeistMono-Variable.woff2') format('woff2-variations'),
+       url('/fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Ground & Surfaces */
+  --page-ground: #EAEAEA;
+  --card-bg: #FFFFFF;
+  --card-border: 1px solid rgba(15, 23, 42, 0.08);
+  --card-radius: 16px;
+  --card-shadow: 0 1px 3px rgba(60,64,67,0.08), 0 6px 20px -6px rgba(60,64,67,0.12);
+
+  /* Typography */
+  --font-display: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Geist', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* Text Contrast Hierarchy */
+  --text-primary: #09090B;   /* 16.5:1 on #EAEAEA */
+  --text-body: #1E293B;      /* 12.2:1 on #EAEAEA */
+  --text-muted: #334155;     /* 8.6:1 on #EAEAEA */
+
+  /* BRAND HUES: fills, shapes, visor, chart bars, icon glyphs. NEVER text */
+  --g-blue: #4285F4;
+  --g-red: #EA4335;
+  --g-yellow: #FBBC04;
+  --g-green: #34A853;
+
+  /* INK VARIANTS: anything that must be READ (labels, links, headings, eyebrows) */
+  --g-blue-ink: #174EA6;     /* 6.52:1 passes */
+  --g-red-ink: #A50E0E;      /* 6.54:1 passes */
+  --g-yellow-ink: #8A5A00;   /* 4.93:1 passes */
+  --g-green-ink: #0D652D;    /* 5.99:1 passes */
+
+  /* Primary CTA Fill (5.23:1 on white text passes) */
+  --cta-primary: #1668D9;
+  --cta-primary-hover: #1255B4;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  background-color: var(--page-ground);
+  color: var(--text-body);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* -------------------------------------------------- */
+/* Typography Helpers                                 */
+/* -------------------------------------------------- */
+h1, h2, h3, h4 {
+  color: var(--text-primary);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.section-title {
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.mono-eyebrow {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+
+/* -------------------------------------------------- */
+/* The Signature Four-Colour Rule                     */
+/* 4px-tall bar split into four EQUAL hard quarters:  */
+/* Blue, Red, Yellow, Green. No gradient!             */
+/* -------------------------------------------------- */
+.four-colour-rule {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--g-blue) 0%,
+    var(--g-blue) 25%,
+    var(--g-red) 25%,
+    var(--g-red) 50%,
+    var(--g-yellow) 50%,
+    var(--g-yellow) 75%,
+    var(--g-green) 75%,
+    var(--g-green) 100%
+  );
+  width: 100%;
+  margin: 10px 0 16px;
+}
+
+/* -------------------------------------------------- */
+/* Opaque White Cards                                 */
+/* -------------------------------------------------- */
+.white-card {
+  background: var(--card-bg);
+  border: var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Sequence Colour Cycle Bars (4px leading edge) */
+.seq-card-blue {
+  border-left: 4px solid var(--g-blue);
+}
+.seq-card-red {
+  border-left: 4px solid var(--g-red);
+}
+.seq-card-yellow {
+  border-left: 4px solid var(--g-yellow);
+}
+.seq-card-green {
+  border-left: 4px solid var(--g-green);
+}
+
+/* -------------------------------------------------- */
+/* Action Buttons & CTAs                              */
+/* -------------------------------------------------- */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 24px;
+  border-radius: var(--radius-sm);
+  background: var(--cta-primary);
+  color: #FFFFFF;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(22, 104, 217, 0.3), 0 4px 12px rgba(22, 104, 217, 0.2);
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--cta-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(22, 104, 217, 0.4), 0 6px 16px rgba(22, 104, 217, 0.25);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  background: #FFFFFF;
+  color: var(--text-body);
+  font-weight: 600;
+  font-size: 0.875rem;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #F8FAFC;
+  border-color: rgba(15, 23, 42, 0.25);
+}
+
+/* -------------------------------------------------- */
+/* Mobile Thumb-Friendly Question Options             */
+/* -------------------------------------------------- */
+.option-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  min-height: 64px;
+  border-radius: var(--card-radius);
+  background: #FFFFFF;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 1px 3px rgba(60,64,67,0.06);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.option-btn:hover:not(:disabled) {
+  border-color: var(--g-blue);
+  background: #F8FAFC;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px -4px rgba(66, 133, 244, 0.15);
+}
+
+.option-btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.option-btn.selected {
+  border: 2px solid var(--g-blue);
+  background: rgba(66, 133, 244, 0.05);
+  box-shadow: 0 4px 16px rgba(66, 133, 244, 0.15);
+}
+
+.option-letter-badge {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  background: #F1F5F9;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  color: var(--text-body);
+  transition: all 0.2s ease;
+}
+
+.option-btn.selected .option-letter-badge {
+  background: var(--g-blue);
+  color: #FFFFFF;
+  border-color: var(--g-blue);
+}
+
+/* -------------------------------------------------- */
+/* Pulse Indicators                                   */
+/* -------------------------------------------------- */
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  position: relative;
+  display: inline-block;
+}
+
+.pulse-dot::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  opacity: 0.6;
+  animation: pingAnimation 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes pingAnimation {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}

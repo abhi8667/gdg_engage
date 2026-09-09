@@ -1,0 +1,16 @@
+{
+  "q1": {},
+  "q2": {
+    "AI-DCSW7L": {
+      "optionId": "opt-b",
+      "timestamp": 1788917376460,
+      "attendee": {
+        "ticketId": "AI-DCSW7L",
+        "fullName": "Abhinandan Jaiswal",
+        "branch": "CSE",
+        "studentId": "RVCE26BCS000",
+        "pose": "thinking"
+      }
+    }
+  }
+}
