@@ -149,7 +149,7 @@ export default function StudentView({ onHostUnlock }) {
                     setInputTicket(e.target.value);
                     if (validationError) setValidationError('');
                   }}
-                  placeholder="e.g. AI-DCSW7L or roll number"
+                  placeholder="e.g. AI-DCSW7L"
                   style={{
                     width: '100%',
                     padding: '16px 18px',

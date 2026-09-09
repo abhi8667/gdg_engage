@@ -123,20 +123,21 @@ async function validateTicketWithConvex(ticketInput) {
 
   const cleanUpper = clean.toUpperCase();
 
-  // Check cache first for sub-millisecond response
+  // Explicitly disallow USN / Roll number formats (e.g. 1RV..., RVCE..., etc.)
+  // Only Ticket IDs (starting with AI-) are allowed
+  if (/^1?RV/i.test(cleanUpper) || !cleanUpper.startsWith('AI-')) {
+    return {
+      valid: false,
+      error: 'Only Ticket IDs (e.g. AI-XXXXXX) are accepted. USN is not valid for entry.'
+    };
+  }
+
+  // Check cache first for sub-millisecond response (strictly by ticketId)
   if (attendeeCache[cleanUpper]) {
     return { valid: true, attendee: attendeeCache[cleanUpper], source: 'cache' };
   }
 
-  // Also check if matches studentId or clean string in cache
-  const cachedMatch = Object.values(attendeeCache).find(
-    (a) => a.ticketId?.toUpperCase() === cleanUpper || a.studentId?.toUpperCase() === cleanUpper
-  );
-  if (cachedMatch) {
-    return { valid: true, attendee: cachedMatch, source: 'cache' };
-  }
-
-  // Query Convex `attendees:mine`
+  // Query Convex `attendees:mine` strictly for this ticket ID
   try {
     const res = await fetch(`${CONVEX_URL}/api/query`, {
       method: 'POST',
@@ -150,43 +151,41 @@ async function validateTicketWithConvex(ticketInput) {
 
     if (res.ok) {
       const data = await res.json();
-      if (data.status === 'success' && data.value) {
-        const attendee = {
-          ticketId: data.value.ticketId,
-          fullName: data.value.fullName,
-          branch: data.value.branch || 'AI / CS',
-          studentId: data.value.studentId,
-          pose: data.value.pose || 'closeup',
-          year: data.value.year
-        };
-        // Cache it
-        attendeeCache[attendee.ticketId.toUpperCase()] = attendee;
-        if (attendee.studentId) {
-          attendeeCache[attendee.studentId.toUpperCase()] = attendee;
+      if (data.status === 'success') {
+        if (data.value && data.value.ticketId) {
+          const attendee = {
+            ticketId: data.value.ticketId,
+            fullName: data.value.fullName,
+            branch: data.value.branch || 'AI / CS',
+            studentId: data.value.studentId,
+            pose: data.value.pose || 'closeup',
+            year: data.value.year
+          };
+          // Cache strictly by uppercase ticketId
+          attendeeCache[attendee.ticketId.toUpperCase()] = attendee;
+          persistState();
+          return { valid: true, attendee, source: 'convex' };
+        } else {
+          // Convex explicitly returned no ticket found
+          return {
+            valid: false,
+            error: 'Ticket ID not found. Please enter the valid Ticket ID from your ticket.'
+          };
         }
-        persistState();
-        return { valid: true, attendee, source: 'convex' };
       }
     }
   } catch (err) {
     console.warn('Convex network check failed or timed out:', err.message);
-  }
-
-  // Fallback: If attendee format matches standard ticket pattern (e.g. AI-XXXXXX or 1RV26CSXXX)
-  if (/^AI-[A-Z0-9]{5,8}$/i.test(cleanUpper) || /^1?RV\d{2}[A-Z]{2,4}\d{2,4}$/i.test(cleanUpper)) {
-    const fallbackAttendee = {
-      ticketId: cleanUpper.startsWith('AI-') ? cleanUpper : `AI-${cleanUpper.slice(-6)}`,
-      fullName: `Attendee (${cleanUpper})`,
-      branch: 'AIML / CS',
-      studentId: cleanUpper,
-      pose: 'ready'
+    return {
+      valid: false,
+      error: 'Ticket verification server unreachable. Please verify your connection or try again.'
     };
-    attendeeCache[cleanUpper] = fallbackAttendee;
-    persistState();
-    return { valid: true, attendee: fallbackAttendee, source: 'format_fallback' };
   }
 
-  return { valid: false, error: 'Ticket ID or Roll Number not found in event roster' };
+  return {
+    valid: false,
+    error: 'Invalid Ticket ID. Please enter the Ticket ID from your confirmation (e.g. AI-XXXXXX).'
+  };
 }
 
 // -------------------------------------------------------------
