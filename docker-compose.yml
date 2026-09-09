@@ -6,10 +6,10 @@ services:
     container_name: gdg-engage
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "3001:10000"
     environment:
       - NODE_ENV=production
-      - PORT=3001
+      - PORT=10000
       - CONVEX_URL=https://canny-ferret-157.convex.cloud
       - PING_INTERVAL_MS=150000
     volumes:

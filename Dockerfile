@@ -19,7 +19,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production \
-    PORT=3001
+    PORT=10000
 
 # Install only production dependencies
 COPY package*.json ./
@@ -34,12 +34,12 @@ COPY public/ ./public/
 COPY pose/ ./pose/
 COPY data/ ./data/
 
-# Expose default application port
-EXPOSE 3001
+# Expose Render standard container port
+EXPOSE 10000
 
 # Healthcheck to verify the server and /healthz endpoint are responding
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://localhost:' + (process.env.PORT || 3001) + '/healthz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+  CMD node -e "fetch('http://localhost:' + (process.env.PORT || 10000) + '/healthz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
 # Start the unified Express + WebSocket + Static server
 CMD ["node", "server.js"]
