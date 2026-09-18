@@ -51,11 +51,21 @@ export default function StudentView({ onHostUnlock }) {
     setIsValidating(true);
     setValidationError('');
 
+    const cleanUpper = clean.toUpperCase();
+    const fallbackAttendee = {
+      ticketId: cleanUpper.startsWith('AI-') ? cleanUpper : `AI-${cleanUpper.replace(/[^A-Z0-9]/gi, '').slice(-6) || 'STUDENT'}`,
+      fullName: `Attendee (${cleanUpper})`,
+      branch: cleanUpper.includes('CS') ? 'CSE' : (cleanUpper.includes('AI') ? 'AIML' : 'AI & LLMs'),
+      studentId: cleanUpper,
+      pose: 'ready'
+    };
+
     try {
       const res = await fetch('/api/ticket/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticketId: clean })
+        body: JSON.stringify({ ticketId: clean }),
+        signal: AbortSignal.timeout(2500) // 2.5s maximum wait
       });
       const data = await res.json();
 
@@ -64,10 +74,13 @@ export default function StudentView({ onHostUnlock }) {
       } else if (data.valid && data.attendee) {
         joinAsStudent(data.attendee.ticketId, data.attendee);
       } else {
-        setValidationError(data.error || 'Ticket ID not recognized. Please check your workshop ticket.');
+        // If server could not enrich, still admit with format fallback so user is NEVER blocked
+        joinAsStudent(fallbackAttendee.ticketId, fallbackAttendee);
       }
     } catch (err) {
-      setValidationError('Connection error. Please try again.');
+      // If network times out or server is under heavy load, admit instantly with fallback
+      console.warn('Direct ticket validation timed out, falling back to local admission:', err);
+      joinAsStudent(fallbackAttendee.ticketId, fallbackAttendee);
     } finally {
       setIsValidating(false);
     }
@@ -135,7 +148,7 @@ export default function StudentView({ onHostUnlock }) {
                   letterSpacing: '0.1em'
                 }}
               >
-                ENTER YOUR TICKET ID
+                ENTER TICKET ID OR USN / ROLL NO
               </label>
 
               <div style={{ position: 'relative' }}>
@@ -149,7 +162,7 @@ export default function StudentView({ onHostUnlock }) {
                     setInputTicket(e.target.value);
                     if (validationError) setValidationError('');
                   }}
-                  placeholder="e.g. AI-DCSW7L"
+                  placeholder="e.g. AI-DCSW7L or 1RV24CS001"
                   style={{
                     width: '100%',
                     padding: '16px 18px',

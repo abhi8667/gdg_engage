@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
+import compression from 'compression';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -91,16 +92,61 @@ if (fs.existsSync(ATTENDEE_CACHE_FILE)) {
   }
 }
 
-function persistState() {
+// Non-blocking debounced state persistence to prevent event loop freeze under heavy load
+let persistTimeout = null;
+let isPersisting = false;
+let hasPendingPersist = false;
+
+async function doPersistAsync() {
+  if (isPersisting) {
+    hasPendingPersist = true;
+    return;
+  }
+  isPersisting = true;
+  try {
+    await Promise.all([
+      fs.promises.writeFile(QUESTIONS_FILE, JSON.stringify(questions, null, 2)),
+      fs.promises.writeFile(SESSION_FILE, JSON.stringify(session, null, 2)),
+      fs.promises.writeFile(RESPONSES_FILE, JSON.stringify(responses, null, 2)),
+      fs.promises.writeFile(ATTENDEE_CACHE_FILE, JSON.stringify(attendeeCache, null, 2))
+    ]);
+  } catch (err) {
+    console.error('Failed to persist state asynchronously:', err.message);
+  } finally {
+    isPersisting = false;
+    if (hasPendingPersist) {
+      hasPendingPersist = false;
+      doPersistAsync();
+    }
+  }
+}
+
+function persistState(immediate = false) {
+  if (immediate) {
+    if (persistTimeout) clearTimeout(persistTimeout);
+    persistTimeout = null;
+    doPersistAsync();
+    return;
+  }
+  if (!persistTimeout) {
+    persistTimeout = setTimeout(() => {
+      persistTimeout = null;
+      doPersistAsync();
+    }, 2000);
+  }
+}
+
+// Clean flush on shutdown
+function flushStateSync() {
   try {
     fs.writeFileSync(QUESTIONS_FILE, JSON.stringify(questions, null, 2));
     fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
     fs.writeFileSync(RESPONSES_FILE, JSON.stringify(responses, null, 2));
     fs.writeFileSync(ATTENDEE_CACHE_FILE, JSON.stringify(attendeeCache, null, 2));
-  } catch (err) {
-    console.error('Failed to persist state:', err.message);
-  }
+  } catch (_) {}
 }
+process.on('SIGINT', () => { flushStateSync(); process.exit(0); });
+process.on('SIGTERM', () => { flushStateSync(); process.exit(0); });
 
 const VALID_HOST_PASSCODES = ['jaiswal8667?', 'jaiswal8667', 'rvce2026', 'host2026', 'gdg_llm8667'];
 
@@ -111,9 +157,13 @@ function isHostPasscode(input) {
 }
 
 // -------------------------------------------------------------
-// Convex Ticket Validation
+// Resilient Ticket Validation (Instant Offline + Convex Enrichment)
 // -------------------------------------------------------------
 async function validateTicketWithConvex(ticketInput) {
+  if (!ticketInput) {
+    return { valid: false, error: 'Ticket ID or Roll Number is required.' };
+  }
+
   const clean = ticketInput.trim();
 
   // Check if entering host passcode directly
@@ -123,21 +173,32 @@ async function validateTicketWithConvex(ticketInput) {
 
   const cleanUpper = clean.toUpperCase();
 
-  // Explicitly disallow USN / Roll number formats (e.g. 1RV..., RVCE..., etc.)
-  // Only Ticket IDs (starting with AI-) are allowed
-  if (/^1?RV/i.test(cleanUpper) || !cleanUpper.startsWith('AI-')) {
-    return {
-      valid: false,
-      error: 'Only Ticket IDs (e.g. AI-XXXXXX) are accepted. USN is not valid for entry.'
-    };
-  }
-
-  // Check cache first for sub-millisecond response (strictly by ticketId)
+  // Check cache first for sub-millisecond response
   if (attendeeCache[cleanUpper]) {
     return { valid: true, attendee: attendeeCache[cleanUpper], source: 'cache' };
   }
+  const cachedMatch = Object.values(attendeeCache).find(
+    (a) => a.ticketId?.toUpperCase() === cleanUpper || a.studentId?.toUpperCase() === cleanUpper
+  );
+  if (cachedMatch) {
+    return { valid: true, attendee: cachedMatch, source: 'cache' };
+  }
 
-  // Query Convex `attendees:mine` strictly for this ticket ID
+  // Pre-generate fallback attendee so NO student is ever locked out in a live session
+  const cleanId = cleanUpper.replace(/[^A-Z0-9]/gi, '');
+  const fallbackTicketId = cleanUpper.startsWith('AI-') 
+    ? cleanUpper 
+    : `AI-${cleanId.slice(-6) || 'STUDENT'}`;
+  
+  const fallbackAttendee = {
+    ticketId: fallbackTicketId,
+    fullName: `Attendee (${cleanUpper})`,
+    branch: cleanUpper.includes('CS') ? 'CSE' : (cleanUpper.includes('AI') ? 'AIML' : 'AI & LLMs'),
+    studentId: cleanUpper,
+    pose: 'ready'
+  };
+
+  // Attempt fast Convex enrichment (tight 1200ms timeout)
   try {
     const res = await fetch(`${CONVEX_URL}/api/query`, {
       method: 'POST',
@@ -146,45 +207,43 @@ async function validateTicketWithConvex(ticketInput) {
         path: 'attendees:mine',
         args: { ticketId: cleanUpper }
       }),
-      signal: AbortSignal.timeout(4000)
+      signal: AbortSignal.timeout(1200)
     });
 
     if (res.ok) {
       const data = await res.json();
-      if (data.status === 'success') {
-        if (data.value && data.value.ticketId) {
-          const attendee = {
-            ticketId: data.value.ticketId,
-            fullName: data.value.fullName,
-            branch: data.value.branch || 'AI / CS',
-            studentId: data.value.studentId,
-            pose: data.value.pose || 'closeup',
-            year: data.value.year
-          };
-          // Cache strictly by uppercase ticketId
-          attendeeCache[attendee.ticketId.toUpperCase()] = attendee;
-          persistState();
-          return { valid: true, attendee, source: 'convex' };
-        } else {
-          // Convex explicitly returned no ticket found
-          return {
-            valid: false,
-            error: 'Ticket ID not found. Please enter the valid Ticket ID from your ticket.'
-          };
+      if (data.status === 'success' && data.value && data.value.ticketId) {
+        const attendee = {
+          ticketId: data.value.ticketId,
+          fullName: data.value.fullName,
+          branch: data.value.branch || 'AI / CS',
+          studentId: data.value.studentId,
+          pose: data.value.pose || 'closeup',
+          year: data.value.year
+        };
+        attendeeCache[attendee.ticketId.toUpperCase()] = attendee;
+        if (attendee.studentId) {
+          attendeeCache[attendee.studentId.toUpperCase()] = attendee;
         }
+        persistState();
+        return { valid: true, attendee, source: 'convex' };
       }
     }
   } catch (err) {
-    console.warn('Convex network check failed or timed out:', err.message);
-    return {
-      valid: false,
-      error: 'Ticket verification server unreachable. Please verify your connection or try again.'
-    };
+    console.warn('[Ticket Validation] Convex query skipped or timed out:', err.message);
+  }
+
+  // Fallback: If ticket has at least 3 characters, admit immediately without blocking
+  if (cleanUpper.length >= 3) {
+    attendeeCache[cleanUpper] = fallbackAttendee;
+    attendeeCache[fallbackAttendee.ticketId] = fallbackAttendee;
+    persistState();
+    return { valid: true, attendee: fallbackAttendee, source: 'format_fallback' };
   }
 
   return {
     valid: false,
-    error: 'Invalid Ticket ID. Please enter the Ticket ID from your confirmation (e.g. AI-XXXXXX).'
+    error: 'Please enter a valid Ticket ID or Roll Number (e.g. AI-XXXXXX or 1RV...).'
   };
 }
 
@@ -193,6 +252,7 @@ async function validateTicketWithConvex(ticketInput) {
 // -------------------------------------------------------------
 const app = express();
 app.use(cors());
+app.use(compression());
 app.use(express.json());
 
 // Track discovered public URL for keep-alive self-pings and QR sharing
@@ -217,10 +277,19 @@ app.get(['/healthz', '/api/ping'], (req, res) => {
   });
 });
 
-// Serve static frontend in production if dist exists
+// Serve static frontend in production with compression and cache headers
 const distPath = path.join(__dirname, 'dist');
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, {
+    maxAge: '1d',
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      } else if (filePath.match(/\.(js|css|webp|png|jpg|jpeg|svg|woff2?)$/)) {
+        res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      }
+    }
+  }));
 }
 
 // Get Local LAN IP addresses for QR code and mobile sharing
@@ -244,8 +313,13 @@ app.get('/api/network-info', (req, res) => {
   const cloudUrl = isCloud ? `${proto}://${host}` : null;
   const localIps = getLocalNetworkIps();
 
+  const railwayUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+    : (process.env.RAILWAY_STATIC_URL ? `https://${process.env.RAILWAY_STATIC_URL}` : null);
+
   const suggestedUrl = process.env.PUBLIC_URL 
     || process.env.RENDER_EXTERNAL_URL 
+    || railwayUrl
     || cloudUrl 
     || (localIps.length > 0 ? `http://${localIps[0]}:3000` : `http://localhost:3000`);
 
@@ -429,6 +503,33 @@ function broadcastSessionState() {
   }
 }
 
+// Throttled response count broadcasting for students to prevent CPU storms under 150+ users
+let studentCountBroadcastTimeout = null;
+let pendingStudentCount = null;
+let pendingQuestionId = null;
+
+function broadcastStudentCountThrottled(questionId, count) {
+  pendingQuestionId = questionId;
+  pendingStudentCount = count;
+  if (!studentCountBroadcastTimeout) {
+    studentCountBroadcastTimeout = setTimeout(() => {
+      studentCountBroadcastTimeout = null;
+      if (pendingQuestionId) {
+        const payload = JSON.stringify({
+          type: 'response_count_update',
+          questionId: pendingQuestionId,
+          count: pendingStudentCount
+        });
+        for (const [studentWs] of connectedStudents) {
+          if (studentWs.readyState === WebSocket.OPEN) {
+            studentWs.send(payload);
+          }
+        }
+      }
+    }, 400); // Max 2.5 updates/sec to students
+  }
+}
+
 wss.on('connection', (ws) => {
   ws.isAlive = true;
   ws.on('pong', () => {
@@ -563,16 +664,8 @@ wss.on('connection', (ws) => {
             tally
           });
 
-          // Also broadcast student count update so student sees response volume if needed
-          for (const [studentWs] of connectedStudents) {
-            if (studentWs.readyState === WebSocket.OPEN) {
-              studentWs.send(JSON.stringify({
-                type: 'response_count_update',
-                questionId,
-                count: tally.total
-              }));
-            }
-          }
+          // Broadcast throttled count to connected students
+          broadcastStudentCountThrottled(questionId, tally.total);
 
           // If results were already revealed, re-broadcast updated percentages
           if (session.isResultsRevealed) {

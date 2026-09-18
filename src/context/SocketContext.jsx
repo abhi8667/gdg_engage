@@ -147,9 +147,10 @@ export function SocketProvider({ children }) {
       ws.onclose = () => {
         setConnected(false);
         wsRef.current = null;
-        // Auto-reconnect with exponential backoff
+        // Auto-reconnect with randomized jitter backoff (prevents 150-client thundering herd)
         clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = setTimeout(connect, 2000);
+        const jitterMs = 1200 + Math.floor(Math.random() * 2000);
+        reconnectTimeoutRef.current = setTimeout(connect, jitterMs);
       };
 
       ws.onerror = () => {
@@ -158,7 +159,8 @@ export function SocketProvider({ children }) {
     } catch (err) {
       console.error('WebSocket connection error:', err);
       clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = setTimeout(connect, 3000);
+      const jitterMs = 2000 + Math.floor(Math.random() * 2000);
+      reconnectTimeoutRef.current = setTimeout(connect, jitterMs);
     }
   }, [role, ticketId, attendee, myAnsweredQuestionId]);
 
