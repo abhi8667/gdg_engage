@@ -11,7 +11,13 @@ import {
   Radio,
   BarChart3,
   Layers,
-  Send
+  Send,
+  Upload,
+  Trash2,
+  FileSpreadsheet,
+  Download,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 
 const SEQUENCE_COLORS = [
@@ -20,6 +26,95 @@ const SEQUENCE_COLORS = [
   { brand: 'var(--g-yellow)', ink: 'var(--g-yellow-ink)' },
   { brand: 'var(--g-green)', ink: 'var(--g-green-ink)' }
 ];
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return [];
+
+  const parseRow = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const rows = lines.map(parseRow);
+  if (rows.length === 0) return [];
+
+  let startIdx = 0;
+  const firstRow = rows[0].map((c) => c.toLowerCase());
+  if (firstRow.some((c) => c.includes('question') || c.includes('option'))) {
+    startIdx = 1;
+  }
+
+  const parsedQuestions = [];
+  for (let i = startIdx; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.length < 3) continue;
+
+    const qText = row[0];
+    if (!qText) continue;
+
+    let optionsCols = [];
+    let category = 'Live Poll';
+
+    if (row.length >= 6) {
+      optionsCols = [row[1], row[2], row[3], row[4]].filter(Boolean);
+      category = row[5] || 'Live Poll';
+    } else {
+      optionsCols = row.slice(1).filter(Boolean);
+    }
+
+    if (optionsCols.length < 2) continue;
+
+    parsedQuestions.push({
+      text: qText,
+      category: category,
+      type: 'mcq',
+      options: optionsCols.map((optText, idx) => ({
+        id: `opt_${idx + 1}`,
+        label: String.fromCharCode(65 + idx),
+        text: optText
+      }))
+    });
+  }
+
+  return parsedQuestions;
+}
+
+function downloadSampleCSV() {
+  const sample = `Question,Option A,Option B,Option C,Option D,Category
+"What does LLM stand for?","Large Language Model","Little Language Machine","Long Logical Model","Local Learning Mechanism","AI Fundamentals"
+"Which attention mechanism was introduced in 'Attention Is All You Need'?","Self-Attention","Convolutional Attention","Recurrent Attention","Linear Filter Attention","Architecture"
+"What is the role of temperature in generation?","Controls randomness/creativity","Increases context size","Compresses weights","Speeds up GPU clocks","Parameters"
+"Which vector database is commonly used for RAG pipelines?","Pinecone / Chroma","Redis Cache","SQLite","Apache Kafka","Embeddings"`;
+
+  const blob = new Blob([sample], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', 'sample_mcq_questions.csv');
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
 
 export default function HostDashboard({ onOpenQr }) {
   const {
@@ -36,7 +131,10 @@ export default function HostDashboard({ onOpenQr }) {
     hostRevealResults,
     hostCloseQuestion,
     hostResetQuestion,
-    hostAddQuestion
+    hostAddQuestion,
+    hostDeleteQuestion,
+    hostResetQuestions,
+    hostBatchAddQuestions
   } = useSocket();
 
   useEffect(() => {
@@ -56,6 +154,78 @@ export default function HostDashboard({ onOpenQr }) {
   ]);
   const [pushImmediately, setPushImmediately] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // CSV Bulk Upload State
+  const [showCsvModal, setShowCsvModal] = useState(false);
+  const [csvFileName, setCsvFileName] = useState('');
+  const [parsedCsvQuestions, setParsedCsvQuestions] = useState([]);
+  const [csvError, setCsvError] = useState('');
+  const [isCsvImporting, setIsCsvImporting] = useState(false);
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvFileName(file.name);
+    setCsvError('');
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result;
+        if (!text || typeof text !== 'string') {
+          setCsvError('File is empty.');
+          setParsedCsvQuestions([]);
+          return;
+        }
+        const parsed = parseCSV(text);
+        if (parsed.length === 0) {
+          setCsvError('No valid questions found. Ensure rows have a question and at least 2 options.');
+          setParsedCsvQuestions([]);
+        } else {
+          setParsedCsvQuestions(parsed);
+          setCsvError('');
+        }
+      } catch (err) {
+        setCsvError('Failed to parse CSV: ' + err.message);
+        setParsedCsvQuestions([]);
+      }
+    };
+    reader.onerror = () => {
+      setCsvError('Error reading file.');
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportCsv = async () => {
+    if (parsedCsvQuestions.length === 0) return;
+    setIsCsvImporting(true);
+    const res = await hostBatchAddQuestions(parsedCsvQuestions);
+    setIsCsvImporting(false);
+    if (res.ok) {
+      setShowCsvModal(false);
+      setCsvFileName('');
+      setParsedCsvQuestions([]);
+    } else {
+      setCsvError(res.error || 'Failed to import questions');
+    }
+  };
+
+  const handleDeleteQuestion = (q) => {
+    const isActive = currentQuestion && currentQuestion.id === q.id;
+    const confirmMsg = isActive
+      ? `"${q.text.slice(0, 45)}..." is currently LIVE on student screens.\n\nDeleting it will immediately close the question. Proceed?`
+      : `Delete question: "${q.text.slice(0, 45)}..."?`;
+
+    if (window.confirm(confirmMsg)) {
+      hostDeleteQuestion(q.id);
+    }
+  };
+
+  const handleResetToDefaults = () => {
+    if (window.confirm('Reset the Question Library back to the default workshop set?\n\n(Custom added questions will be removed)')) {
+      hostResetQuestions();
+    }
+  };
 
   const handleAddOption = () => {
     if (optionsList.length < 6) {
@@ -466,14 +636,35 @@ export default function HostDashboard({ onOpenQr }) {
                 </h3>
               </div>
 
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="btn-secondary"
-                style={{ padding: '6px 12px', fontSize: '0.75rem' }}
-              >
-                <Plus size={13} />
-                <span>New</span>
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={() => setShowCsvModal(true)}
+                  className="btn-secondary"
+                  style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}
+                  title="Upload questions in bulk from a CSV file"
+                >
+                  <Upload size={13} />
+                  <span>Upload CSV</span>
+                </button>
+
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="btn-secondary"
+                  style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <Plus size={13} />
+                  <span>New</span>
+                </button>
+
+                <button
+                  onClick={handleResetToDefaults}
+                  className="btn-secondary"
+                  style={{ padding: '6px 9px', fontSize: '0.75rem', color: 'var(--text-muted)' }}
+                  title="Reset Question Library to Default Set"
+                >
+                  <RotateCcw size={13} />
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
@@ -521,31 +712,66 @@ export default function HostDashboard({ onOpenQr }) {
                         </span>
                       </div>
 
-                      {isActive ? (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '0.6875rem',
-                            fontFamily: 'var(--font-mono)',
-                            color: 'var(--g-blue-ink)',
-                            fontWeight: 700
-                          }}
-                        >
-                          <span className="pulse-dot" style={{ background: 'var(--g-blue)' }} />
-                          LIVE NOW
-                        </span>
-                      ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {isActive ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '0.6875rem',
+                              fontFamily: 'var(--font-mono)',
+                              color: 'var(--g-blue-ink)',
+                              fontWeight: 700
+                            }}
+                          >
+                            <span className="pulse-dot" style={{ background: 'var(--g-blue)' }} />
+                            LIVE NOW
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => hostPushQuestion(q.id)}
+                            className="btn-primary"
+                            style={{ padding: '6px 14px', fontSize: '0.75rem' }}
+                          >
+                            <Send size={12} />
+                            <span>Push Live</span>
+                          </button>
+                        )}
+
                         <button
-                          onClick={() => hostPushQuestion(q.id)}
-                          className="btn-primary"
-                          style={{ padding: '6px 14px', fontSize: '0.75rem' }}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteQuestion(q);
+                          }}
+                          style={{
+                            background: 'none',
+                            border: '1px solid rgba(15, 23, 42, 0.1)',
+                            borderRadius: 'var(--radius-xs)',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            padding: '6px 7px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = 'var(--g-red-ink)';
+                            e.currentTarget.style.background = 'rgba(234, 67, 53, 0.08)';
+                            e.currentTarget.style.borderColor = 'rgba(234, 67, 53, 0.3)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = 'var(--text-muted)';
+                            e.currentTarget.style.background = 'none';
+                            e.currentTarget.style.borderColor = 'rgba(15, 23, 42, 0.1)';
+                          }}
+                          title="Delete this question"
                         >
-                          <Send size={12} />
-                          <span>Push Live</span>
+                          <Trash2 size={13} />
                         </button>
-                      )}
+                      </div>
                     </div>
 
                     <p style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px', lineHeight: 1.4 }}>
@@ -815,6 +1041,211 @@ export default function HostDashboard({ onOpenQr }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: UPLOAD QUESTIONS VIA CSV */}
+      {showCsvModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.6)',
+            backdropFilter: 'blur(6px)',
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+          }}
+          onClick={() => setShowCsvModal(false)}
+        >
+          <div
+            className="white-card"
+            style={{
+              width: '100%',
+              maxWidth: '600px',
+              padding: '32px 28px',
+              maxHeight: '90vh',
+              overflowY: 'auto'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <div>
+                <span className="mono-eyebrow" style={{ color: 'var(--g-blue-ink)' }}>
+                  BULK QUESTION IMPORTER
+                </span>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, marginTop: '2px' }}>
+                  Upload Questions from CSV
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowCsvModal(false)}
+                className="btn-secondary"
+                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="four-colour-rule" style={{ marginBottom: '16px' }} />
+
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: '16px' }}>
+              Quickly import multiple-choice questions into your workshop pool. Format your spreadsheet with columns for <strong>Question</strong>, <strong>Option A</strong>, <strong>Option B</strong>, <strong>Option C</strong>, <strong>Option D</strong>, and optional <strong>Category</strong>.
+            </p>
+
+            {/* Template Download Banner */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                padding: '12px 16px',
+                background: '#F8FAFC',
+                border: '1px solid rgba(15, 23, 42, 0.08)',
+                borderRadius: 'var(--radius-sm)',
+                marginBottom: '20px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileSpreadsheet size={18} color="var(--g-green)" />
+                <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Need a starting template?
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={downloadSampleCSV}
+                className="btn-secondary"
+                style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '5px' }}
+              >
+                <Download size={13} />
+                <span>Download Sample .CSV</span>
+              </button>
+            </div>
+
+            {/* File Drop / Select Area */}
+            <div
+              style={{
+                border: '2px dashed rgba(66, 133, 244, 0.4)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '24px 20px',
+                textAlign: 'center',
+                background: 'rgba(66, 133, 244, 0.02)',
+                marginBottom: '16px',
+                cursor: 'pointer'
+              }}
+              onClick={() => document.getElementById('csvFileInput')?.click()}
+            >
+              <Upload size={32} color="var(--g-blue)" style={{ margin: '0 auto 8px' }} />
+              <div style={{ fontWeight: 700, fontSize: '0.9375rem', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                {csvFileName ? `Selected: ${csvFileName}` : 'Choose a .csv file to import'}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Click to browse your computer
+              </div>
+              <input
+                id="csvFileInput"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFileSelect}
+                style={{ display: 'none' }}
+              />
+            </div>
+
+            {/* Parse Error */}
+            {csvError && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 14px',
+                  background: 'rgba(234, 67, 53, 0.08)',
+                  border: '1px solid rgba(234, 67, 53, 0.2)',
+                  borderRadius: 'var(--radius-xs)',
+                  color: 'var(--g-red-ink)',
+                  fontSize: '0.8125rem',
+                  marginBottom: '16px'
+                }}
+              >
+                <AlertTriangle size={15} color="var(--g-red)" />
+                <span>{csvError}</span>
+              </div>
+            )}
+
+            {/* Parsed Preview */}
+            {parsedCsvQuestions.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--g-green-ink)' }}>
+                    READY TO IMPORT ({parsedCsvQuestions.length} QUESTIONS DETECTED)
+                  </span>
+                </div>
+                <div
+                  style={{
+                    maxHeight: '180px',
+                    overflowY: 'auto',
+                    border: '1px solid rgba(15, 23, 42, 0.1)',
+                    borderRadius: 'var(--radius-sm)',
+                    background: '#FFFFFF',
+                    padding: '8px'
+                  }}
+                >
+                  {parsedCsvQuestions.map((pq, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        padding: '8px 10px',
+                        borderBottom: i < parsedCsvQuestions.length - 1 ? '1px solid #F1F5F9' : 'none',
+                        fontSize: '0.8125rem'
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '3px' }}>
+                        {i + 1}. {pq.text}
+                      </div>
+                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                        {pq.options.length} options • Category: {pq.category}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCsvModal(false);
+                  setCsvFileName('');
+                  setParsedCsvQuestions([]);
+                  setCsvError('');
+                }}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={parsedCsvQuestions.length === 0 || isCsvImporting}
+                onClick={handleImportCsv}
+                className="btn-primary"
+              >
+                {isCsvImporting ? (
+                  <span>Importing...</span>
+                ) : (
+                  <>
+                    <Upload size={14} />
+                    <span>Import {parsedCsvQuestions.length} Questions</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

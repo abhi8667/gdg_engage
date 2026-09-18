@@ -219,6 +219,15 @@ export function SocketProvider({ children }) {
   const hostRevealResults = (questionId) => send({ type: 'host:reveal_results', questionId });
   const hostCloseQuestion = (questionId) => send({ type: 'host:close_question', questionId });
   const hostResetQuestion = (questionId) => send({ type: 'host:reset_question', questionId });
+  const hostDeleteQuestion = (questionId) => {
+    send({ type: 'host:delete_question', questionId });
+    // Also trigger REST delete in background
+    fetch(`/api/questions/${questionId}`, { method: 'DELETE' }).catch(() => {});
+  };
+  const hostResetQuestions = () => {
+    send({ type: 'host:reset_default_questions' });
+    fetch('/api/questions/reset-default', { method: 'POST' }).catch(() => {});
+  };
 
   const hostAddQuestion = async (newQuestionData) => {
     try {
@@ -230,6 +239,20 @@ export function SocketProvider({ children }) {
       return await res.json();
     } catch (err) {
       console.error('Failed to add question:', err);
+      return { ok: false, error: err.message };
+    }
+  };
+
+  const hostBatchAddQuestions = async (questionsList) => {
+    try {
+      const res = await fetch('/api/questions/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questions: questionsList })
+      });
+      return await res.json();
+    } catch (err) {
+      console.error('Failed to batch add questions:', err);
       return { ok: false, error: err.message };
     }
   };
@@ -260,7 +283,10 @@ export function SocketProvider({ children }) {
         hostRevealResults,
         hostCloseQuestion,
         hostResetQuestion,
-        hostAddQuestion
+        hostDeleteQuestion,
+        hostResetQuestions,
+        hostAddQuestion,
+        hostBatchAddQuestions
       }}
     >
       {children}

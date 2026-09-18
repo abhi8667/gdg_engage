@@ -391,6 +391,74 @@ app.post('/api/questions', (req, res) => {
   res.json({ ok: true, question: newQuestion, session });
 });
 
+app.post('/api/questions/batch', (req, res) => {
+  const { questions: newQuestionsList } = req.body;
+  if (!newQuestionsList || !Array.isArray(newQuestionsList) || newQuestionsList.length === 0) {
+    return res.status(400).json({ error: 'Array of questions is required' });
+  }
+
+  const added = [];
+  for (const q of newQuestionsList) {
+    if (!q.text || !q.options || !Array.isArray(q.options) || q.options.length < 2) continue;
+    const formatted = {
+      id: q.id || `q_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      text: q.text.trim(),
+      type: q.type || 'mcq',
+      category: q.category ? q.category.trim() : 'Live Poll',
+      options: q.options.map((opt, idx) => ({
+        id: opt.id || `opt_${idx + 1}`,
+        label: opt.label || String.fromCharCode(65 + idx),
+        text: typeof opt === 'string' ? opt : opt.text
+      }))
+    };
+    questions.push(formatted);
+    added.push(formatted);
+  }
+
+  persistState(true);
+  broadcastSessionState();
+
+  res.json({ ok: true, count: added.length, questions });
+});
+
+app.delete('/api/questions/:id', (req, res) => {
+  const { id } = req.params;
+  const index = questions.findIndex((q) => q.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Question not found' });
+  }
+
+  questions.splice(index, 1);
+  if (session.currentQuestionId === id) {
+    session.currentQuestionId = null;
+    session.isResultsRevealed = false;
+  }
+  delete responses[id];
+
+  persistState(true);
+  broadcastSessionState();
+
+  res.json({ ok: true, questions });
+});
+
+app.post('/api/questions/reset-default', (req, res) => {
+  if (fs.existsSync(DEFAULT_QUESTIONS_FILE)) {
+    try {
+      questions = JSON.parse(fs.readFileSync(DEFAULT_QUESTIONS_FILE, 'utf-8'));
+      if (session.currentQuestionId && !questions.some((q) => q.id === session.currentQuestionId)) {
+        session.currentQuestionId = null;
+        session.isResultsRevealed = false;
+      }
+      persistState(true);
+      broadcastSessionState();
+      return res.json({ ok: true, questions });
+    } catch (e) {
+      return res.status(500).json({ error: 'Failed to read default questions' });
+    }
+  }
+  res.status(404).json({ error: 'Default questions file not found' });
+});
+
 // Serve React SPA index.html for any remaining route in production
 if (fs.existsSync(distPath)) {
   app.get('*', (req, res) => {
@@ -624,6 +692,37 @@ wss.on('connection', (ws) => {
             session.isResultsRevealed = false;
             persistState();
             broadcastSessionState();
+          }
+          break;
+        }
+
+        case 'host:delete_question': {
+          const { questionId } = msg;
+          const index = questions.findIndex((q) => q.id === questionId);
+          if (index !== -1) {
+            questions.splice(index, 1);
+            if (session.currentQuestionId === questionId) {
+              session.currentQuestionId = null;
+              session.isResultsRevealed = false;
+            }
+            delete responses[questionId];
+            persistState(true);
+            broadcastSessionState();
+          }
+          break;
+        }
+
+        case 'host:reset_default_questions': {
+          if (fs.existsSync(DEFAULT_QUESTIONS_FILE)) {
+            try {
+              questions = JSON.parse(fs.readFileSync(DEFAULT_QUESTIONS_FILE, 'utf-8'));
+              if (session.currentQuestionId && !questions.some((q) => q.id === session.currentQuestionId)) {
+                session.currentQuestionId = null;
+                session.isResultsRevealed = false;
+              }
+              persistState(true);
+              broadcastSessionState();
+            } catch (_) {}
           }
           break;
         }
